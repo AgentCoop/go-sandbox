@@ -1,0 +1,20 @@
+syntax = "proto3";
+package service.client;
+
+import "common.proto";
+
+message StartTransactionRequest {
+  int32 lifetime = 1;
+}
+
+message StartTransactionResponse {
+  uint64 id = 1;
+}
+
+message EndTransactionRequest {
+  uint64 id = 1;
+}
+
+message EndTransactionResponse {
+  common.Empty reserved = 1;
+}

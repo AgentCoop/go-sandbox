@@ -1,0 +1,3 @@
+[submodule "grpc/envoy/envoy"]
+	path = grpc/envoy/envoy
+	url = https://github.com/envoyproxy/envoy.git

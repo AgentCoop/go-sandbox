@@ -1,0 +1,56 @@
+syntax = "proto3";
+package service.client;
+
+import "common.proto";
+import "resource.proto";
+
+message SignUploadRequest {
+  resource.Header   header = 1;
+}
+
+message SignUploadResponse {
+  string sig                    = 1;
+  uint64 clientId               = 2;
+  oneof Session {
+    common.Empty newSession = 3;
+    uint64 oldSessionId = 4; // Old session is being resumed
+  }
+  string clientGrpcWebProxy     = 5; // Being used for feedback with the client uploading resource
+}
+
+message StartSessionRequest {
+  SignUploadResponse        signedReq = 1;
+  resource.Header           resHeader = 2;
+  resource.Body             resBody = 3;
+  common.HubGeoRegion       geoReg = 4;
+}
+
+message StartSessionResponse {
+  uint64 sessionId        = 1;
+  uint32 chunkStartFrom   = 2; // 0 in the case of a new session, and non-negative if we resume an old one
+  string hubGrpcWebProxy  = 3;
+}
+
+message TransferChunkRequest {
+  uint64  sessionId = 1;
+  resource.Chunk  chunk = 2;
+}
+
+message Request {
+}
+
+message Response {
+  common.StatusCode statusCode = 1;
+  oneof Body {
+    SignUploadResponse signUploadBody = 2;
+  }
+}
+
+//
+// Service definition
+//
+service UploadService {
+  rpc SignUploadRequest(SignUploadRequest) returns (SignUploadResponse) {}
+  rpc StartSession(StartSessionRequest) returns (StartSessionResponse) {}
+  rpc TransferChunk(TransferChunkRequest) returns (Response) {}
+}

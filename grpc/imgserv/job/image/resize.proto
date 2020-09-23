@@ -1,0 +1,9 @@
+syntax = "proto3";
+package job.image;
+option go_package = "";
+
+import "resource/image.proto";
+
+message Resize {
+  resource.image.Dimension  dim = 1;
+}

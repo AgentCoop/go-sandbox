@@ -1,0 +1,21 @@
+syntax = "proto3";
+package resource;
+
+import "common.proto";
+
+message Header {
+  string filename             = 1;
+  uint64 size                 = 2;
+  string lastModified         = 3;
+  string contentMd5Hash       = 4;
+  common.mimeType mimeType           = 5;
+}
+
+message Body {
+  uint32 nChunks = 1;
+  uint32 chunkSize = 2;
+}
+
+message Chunk {
+  bytes Content = 1;
+}

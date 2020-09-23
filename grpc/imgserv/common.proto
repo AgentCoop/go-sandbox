@@ -1,0 +1,25 @@
+syntax = "proto3";
+package common;
+
+enum StatusCode {
+  OK = 0;
+}
+
+enum HubGeoRegion {
+  NOT_SPECIFIED       = 0;
+  NORTH_AMERICA       = 1;
+  CENTRAL_AMERICA     = 2;
+  SOUTH_AMERICA       = 3;
+  WESTERN_EUROPE      = 4;
+  EASTERN_EUROPE      = 5;
+  MIDDLE_EAST         = 6;
+  AFRICA              = 7;
+  OCEANIA             = 8;
+}
+
+enum MimeType {
+  IMAGE_JPEG = 0;
+}
+
+message Empty {  }
+

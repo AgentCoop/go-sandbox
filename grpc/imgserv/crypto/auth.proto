@@ -1,0 +1,45 @@
+syntax = "proto3";
+package crypto.auth;
+
+import "common.proto";
+
+enum CRUD_PERM {
+  CREATE = 0;
+  READ = 1;
+  UPDATE = 2;
+  DELETE = 3;
+}
+
+enum TokenType {
+  // User uploading/accessing particular resource
+  USER = 0;
+  // Load balancer
+  LB = 1;
+  // Third party vendor
+  THIRD_PARTY = 2;
+  // Resource hub
+  HUB = 3;
+}
+
+message TokenHeader {
+  TokenType type = 1;
+}
+
+message Token {
+  TokenHeader header = 1;
+  uint64 entityUuid =  2;
+  bytes  payloadEnc = 3;
+}
+
+message TokenPayload {
+  message Client {
+    uint64 expiredAt              = 1;
+    // Tells about how to limit resource uploading
+    uint64 profileId              = 2;
+    uint64 thirdPartyVendorId     = 3;
+    uint32 crudPermMask           = 4;
+  }
+  message LoaderBalancer { }
+  message ThirdPartyVendor {}
+  message Hub {}
+}

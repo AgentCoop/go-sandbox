@@ -1,0 +1,16 @@
+syntax="proto3";
+package hub;
+
+message HeartBeat {
+  uint32 uptimeSecs = 1;
+}
+
+message SuspendClient {
+
+}
+
+message ControlCommand {
+  oneof Cmd {
+    SuspendClient suspendCmd = 1;
+  }
+}
