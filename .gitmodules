@@ -1,3 +1,6 @@
 [submodule "grpc/envoy/envoy"]
 	path = grpc/envoy/envoy
 	url = https://github.com/envoyproxy/envoy.git
+[submodule "grpc/web-example"]
+	path = grpc/web-example
+	url = https://github.com/grpc/grpc-web.git
