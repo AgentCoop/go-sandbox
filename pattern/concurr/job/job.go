@@ -1,8 +1,8 @@
 package job
 
 import (
-	"fmt"
 	"sync"
+	"time"
 )
 
 type JobState int
@@ -40,6 +40,7 @@ type job struct {
 	done		bool
 	doneChan	chan struct{}
 
+	finMu     	sync.Mutex
 	mu     		sync.Mutex
 	rmu     	sync.RWMutex
 	rValue 		interface{} // Access protected by Mutex
@@ -81,16 +82,14 @@ func (j *job) AddTask(task JobTask) *job {
 				select {
 				case <-j.finishChan:
 					go finish()
-					fmt.Println("Done")
 					j.finishWg.Done()
 					return
 				default:
-					j.mu.Lock()
-					state := j.state
-					j.mu.Unlock()
-					if state == Finalizing {
+					//j.finMu.Lock()
+					//j.mu.Unlock()
+					if j.state == Finalizing {
 						// Do nothing and wait for your way own signal
-						fmt.Printf("Finalizing")
+						time.Sleep(time.Millisecond)
 						continue
 					}
 					run() // Start another goroutine in order not to block the parent one
@@ -115,7 +114,6 @@ func (j *job) Run() chan struct{} {
 }
 
 func (j *job) finish() {
-	j.state = Finalizing
 	for i :=0; i < len(j.tasks); i++ {
 		j.finishChan <- struct{}{}
 	}
@@ -127,6 +125,7 @@ func (j *job) finish() {
 }
 
 func (j *job) Finish() {
+	j.state = Finalizing
 	go func() {
 		j.finishOnce.Do(j.finish)
 	}()

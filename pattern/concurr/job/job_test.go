@@ -1,7 +1,6 @@
 package job_test
 
 import (
-	"fmt"
 	j "github.com/AgentCoop/go-sandbox/pattern/concurr/job"
 	"testing"
 	"time"
@@ -52,13 +51,12 @@ func TestFinish(T *testing.T) {
 
 func TestPrereq(T *testing.T) {
 	var counter int
-	p1 := signalAfter(10 * time.Millisecond, func() { counter++; fmt.Printf("c %d\n", counter) })
-	p2 := signalAfter(20 * time.Millisecond, func() { counter++; fmt.Printf("c %d\n", counter) })
+	p1 := signalAfter(10 * time.Millisecond, func() { counter++ })
+	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
 	job := j.NewJob(nil)
 	job.WithPrerequisites(p1, p2)
 	job.AddTask(func(j j.Job) (func(), func()) {
 		return func() {
-				fmt.Printf("c %d\n", counter)
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
@@ -68,5 +66,4 @@ func TestPrereq(T *testing.T) {
 			}
 	})
 	<-job.Run()
-	time.Sleep(time.Second)
 }
