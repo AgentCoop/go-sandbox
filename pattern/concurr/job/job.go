@@ -10,7 +10,6 @@ type JobState int
 const (
 	New JobState = iota
 	WaitingForPrereq
-	PrereqReady
 	Running
 	Finalizing
 	Done
@@ -37,10 +36,8 @@ type job struct {
 	prereqWg   	sync.WaitGroup
 	finishOnce 	sync.Once
 	value      	interface{}
-	done		bool
 	doneChan	chan struct{}
 
-	finMu     	sync.Mutex
 	mu     		sync.Mutex
 	rmu     	sync.RWMutex
 	rValue 		interface{} // Access protected by Mutex
@@ -85,14 +82,12 @@ func (j *job) AddTask(task JobTask) *job {
 					j.finishWg.Done()
 					return
 				default:
-					//j.finMu.Lock()
-					//j.mu.Unlock()
 					if j.state == Finalizing {
-						// Do nothing and wait for your way own signal
+						// Do nothing and wait for your finish signal
 						time.Sleep(time.Millisecond)
 						continue
 					}
-					run() // Start another goroutine in order not to block the parent one
+					run()
 				}
 			}
 		}()
