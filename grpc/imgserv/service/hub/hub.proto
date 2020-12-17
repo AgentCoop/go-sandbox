@@ -1,5 +1,9 @@
-syntax="proto3";
-package hub;
+syntax = "proto3";
+package service.hub;
+option go_package= "";
+
+import "crypto/handshake.proto";
+import "crypto/dhke.proto";
 
 message HeartBeat {
   uint32 uptimeSecs = 1;
@@ -13,4 +17,17 @@ message ControlCommand {
   oneof Cmd {
     SuspendClient suspendCmd = 1;
   }
+}
+
+message LbHandshakeRequest {
+  crypto.handshake.Handshake data = 1;
+  bytes dataSig = 2; // MAC
+}
+
+message LbHandshakeResponse {
+  crypto.dhke.KeyB keyB = 1;
+}
+
+service HubService {
+  rpc LoadBalancerHandshake(LbHandshakeRequest) returns (LbHandshakeResponse) {}
 }

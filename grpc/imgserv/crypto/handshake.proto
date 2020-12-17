@@ -1,0 +1,42 @@
+syntax = "proto3";
+package crypto.handshake;
+option go_package = "";
+
+import "common.proto";
+import "crypto/dhke.proto";
+
+message CommonPayload {
+
+}
+
+message Handshake {
+  common.EntityType initiator = 1;
+  crypto.dhke.KeyA keyA = 2;
+}
+
+message Payload {
+  message Common {
+    //bytes  = 1;
+    //bytes  = 1;
+  }
+  message HubToLb {
+
+  }
+  message HubToThirdParty {
+  }
+  message Client {
+    // Tells about how to limit resource uploading
+    Common common                 = 1;
+    uint64 profileId              = 2;
+    uint32 crudPermMask           = 4;
+  }
+  message LoadBalancer {
+    Common common =1;
+  }
+  message ThirdPartyVendor {
+    Common common = 1;
+  }
+  message Hub {
+    Common common = 1;
+  }
+}

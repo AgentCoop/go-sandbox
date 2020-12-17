@@ -17,6 +17,13 @@ enum HubGeoRegion {
   OCEANIA             = 8;
 }
 
+enum EntityType {
+  LOAD_BALANCER = 0;
+  HUB = 1;
+  THIRD_PARTY_VENDOR = 2;
+  USER = 3;
+}
+
 enum MimeType {
   IMAGE_JPEG = 0;
 }

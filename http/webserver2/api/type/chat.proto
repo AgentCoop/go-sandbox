@@ -1,0 +1,17 @@
+syntax="proto3";
+package chat;
+option go_package = "github.com/AgentCoop/go-sandbox/http/webserver2/build/gen";
+
+//import "google/protobuf/empty.proto";
+
+message Room {
+  message CreateRequest {
+    string name = 1;
+    string desc  = 2;
+  }
+  message CreateResponse {  }
+}
+
+message CreateChatRoomRequest {}
+message ChatRoom {}
+message OnlineStatus {}

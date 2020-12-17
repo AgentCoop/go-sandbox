@@ -1,0 +1,18 @@
+syntax="proto3";
+package chat;
+option go_package = "github.com/AgentCoop/go-sandbox/chat/protobuf";
+
+import "google/protobuf/empty.proto";
+
+service Chat {
+  rpc CreateRoom(Room.CreateRequest) returns (Room.CreateResponse) {}
+}
+
+message Room {
+  message CreateRequest {  }
+  message CreateResponse {  }
+}
+
+message CreateChatRoomRequest {}
+message ChatRoom {}
+message OnlineStatus {}

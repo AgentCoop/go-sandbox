@@ -1,0 +1,20 @@
+/**
+ Deffie-Hellman key exchange
+ */
+syntax = "proto3";
+package crypto.dhke;
+option go_package = "";
+
+message CommonParams {
+  bytes g = 1;
+  bytes n = 2;
+}
+
+message KeyA {
+  CommonParams params = 1;
+  bytes ag = 2;
+}
+
+message KeyB {
+  bytes bg = 1;
+}

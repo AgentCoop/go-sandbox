@@ -32,14 +32,23 @@ message Token {
 }
 
 message TokenPayload {
-  message Client {
+  message Common {
     uint64 expiredAt              = 1;
+    uint64 entityUuid             = 2;
+  }
+  message Client {
     // Tells about how to limit resource uploading
+    Common common                 = 1;
     uint64 profileId              = 2;
-    uint64 thirdPartyVendorId     = 3;
     uint32 crudPermMask           = 4;
   }
-  message LoaderBalancer { }
-  message ThirdPartyVendor {}
-  message Hub {}
+  message LoadBalancer {
+    Common common =1;
+  }
+  message ThirdPartyVendor {
+    Common common = 1;
+  }
+  message Hub {
+    Common common = 1;
+  }
 }

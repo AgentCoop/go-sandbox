@@ -1,0 +1,10 @@
+syntax="proto3";
+package chat;
+option go_package = "github.com/AgentCoop/go-sandbox/http/webserver2/build/gen";
+
+import "google/protobuf/empty.proto";
+import "type/chat.proto";
+
+service Chat {
+  rpc CreateRoom(Room.CreateRequest) returns (Room.CreateResponse) {}
+}
