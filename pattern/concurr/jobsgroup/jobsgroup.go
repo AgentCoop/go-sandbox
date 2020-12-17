@@ -19,9 +19,10 @@ type jobsGroup struct {
 	shutdownChan chan struct{}
 	wg           sync.WaitGroup
 	shutdownOnce sync.Once
+	SafeValue		interface{}
 }
 
-func NewJobsGroup() *jobsGroup {
+func NewJobsGroup(v interface{}) *jobsGroup {
 	g := &jobsGroup{}
 	g.shutdownChan = make(chan struct{}, 1)
 	return g
