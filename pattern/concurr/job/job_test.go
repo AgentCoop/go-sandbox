@@ -1,10 +1,27 @@
 package job_test
 
 import (
+	"fmt"
 	j "github.com/AgentCoop/go-sandbox/pattern/concurr/job"
 	"testing"
 	"time"
 )
+
+//func p(msg string, a ...interface{}) {
+//	fmt.Printf(msg, a)
+//}
+
+func signalAfter(t time.Duration, fn func()) chan struct{} {
+	ch := make(chan struct{})
+	go func() {
+		time.Sleep(t)
+		if fn != nil {
+			fn()
+		}
+		ch <- struct{}{}
+	}()
+	return ch
+}
 
 func TestFinish(T *testing.T) {
 	job := j.NewJob(nil)
@@ -31,4 +48,25 @@ func TestFinish(T *testing.T) {
 		}
 	})
 	<-job.Run()
+}
+
+func TestPrereq(T *testing.T) {
+	var counter int
+	p1 := signalAfter(10 * time.Millisecond, func() { counter++; fmt.Printf("c %d\n", counter) })
+	p2 := signalAfter(20 * time.Millisecond, func() { counter++; fmt.Printf("c %d\n", counter) })
+	job := j.NewJob(nil)
+	job.WithPrerequisites(p1, p2)
+	job.AddTask(func(j j.Job) (func(), func()) {
+		return func() {
+				fmt.Printf("c %d\n", counter)
+				if counter != 2 {
+					T.Fatalf("got %d, expected %d\n", counter, 2)
+				}
+				j.Finish()
+			}, func() {
+
+			}
+	})
+	<-job.Run()
+	time.Sleep(time.Second)
 }

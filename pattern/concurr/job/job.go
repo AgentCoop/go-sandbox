@@ -10,6 +10,7 @@ type JobState int
 const (
 	New JobState = iota
 	WaitingForPrereq
+	PrereqReady
 	Running
 	Finalizing
 	Done
@@ -47,6 +48,7 @@ type job struct {
 
 func NewJob(value interface{}) *job {
 	j := &job{}
+	j.state = New
 	j.value = value
 	j.doneChan = make(chan struct{}, 1)
 	return j
@@ -55,13 +57,14 @@ func NewJob(value interface{}) *job {
 // A job won't start until all its prerequisites are met
 func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 	j.state = WaitingForPrereq
+	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
-		j.prereqWg.Add(1)
 		go func() {
 			for {
 				select {
 				case <-sig:
 					j.prereqWg.Done()
+					return
 				}
 			}
 		}()
@@ -82,7 +85,10 @@ func (j *job) AddTask(task JobTask) *job {
 					j.finishWg.Done()
 					return
 				default:
-					if j.state == Finalizing {
+					j.mu.Lock()
+					state := j.state
+					j.mu.Unlock()
+					if state == Finalizing {
 						// Do nothing and wait for your way own signal
 						fmt.Printf("Finalizing")
 						continue
@@ -96,6 +102,10 @@ func (j *job) AddTask(task JobTask) *job {
 }
 
 func (j *job) Run() chan struct{} {
+	if j.state == WaitingForPrereq {
+		j.prereqWg.Done()
+		j.prereqWg.Wait()
+	}
 	j.state = Running
 	j.finishChan = make(chan struct{}, len(j.tasks))
 	for _, task := range j.tasks {
