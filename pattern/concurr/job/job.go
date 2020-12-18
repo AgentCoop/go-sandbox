@@ -21,28 +21,31 @@ type JobTask func(j Job) (func() bool, func())
 type Job interface {
 	AddTask(job JobTask) *job
 	Run() chan struct{}
-	Finish()
+	Cancel()
+	GetState() JobState
 	GetRValue() interface{}
 	SetRValue(v interface{})
-	GetState() JobState
 	IsRunning() bool
 	IsDone() bool
+	IsCancelled() bool
 }
 
 type job struct {
-	tasks      	[]func()
-	state       JobState
-	finishChan 	chan struct{}
-	finishWg   	sync.WaitGroup
-	prereqWg   	sync.WaitGroup
-	finishOnce 	sync.Once
-	value      	interface{}
-	doneChan	chan struct{}
+	tasks      []func()
+	state      JobState
+
+	cancelChan chan struct{}
+	doneChan   chan struct{}
+	cancelOnce sync.Once
+	finishWg   sync.WaitGroup
+	prereqWg   sync.WaitGroup
+
+	value      interface{}
+	rValue 		interface{} // Access protected by Mutex
+	rwValue 	interface{} // Access protected by RWMutex
 
 	mu     		sync.Mutex
 	rmu     	sync.RWMutex
-	rValue 		interface{} // Access protected by Mutex
-	rwValue 	interface{} // Access protected by RWMutex
 }
 
 func NewJob(value interface{}) *job {
@@ -74,12 +77,12 @@ func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 func (j *job) AddTask(task JobTask) *job {
 	j.finishWg.Add(1)
 	j.tasks = append(j.tasks, func() {
-		run, finish := task(j)
+		run, cancel := task(j)
 		go func() {
 			for {
 				select {
-				case <-j.finishChan:
-					go finish()
+				case <-j.cancelChan:
+					go cancel()
 					j.finishWg.Done()
 					return
 				default:
@@ -89,7 +92,10 @@ func (j *job) AddTask(task JobTask) *job {
 						continue
 					}
 					done := run()
-					if done { return }
+					if done {
+						j.finishWg.Done()
+						return
+					}
 				}
 			}
 		}()
@@ -103,28 +109,27 @@ func (j *job) Run() chan struct{} {
 		j.prereqWg.Wait()
 	}
 	j.state = Running
-	j.finishChan = make(chan struct{}, len(j.tasks))
+	j.cancelChan = make(chan struct{}, len(j.tasks))
 	for _, task := range j.tasks {
 		task()
 	}
 	return j.doneChan
 }
 
-func (j *job) finish() {
+func (j *job) cancel() {
 	for i :=0; i < len(j.tasks); i++ {
-		j.finishChan <- struct{}{}
+		j.cancelChan <- struct{}{}
 	}
 	go func(){
 		j.finishWg.Wait()
-		j.state = Done
 		j.doneChan <- struct{}{}
 	}()
 }
 
-func (j *job) Finish() {
-	j.state = Finalizing
+func (j *job) Cancel() {
+	j.state = Cancelled
 	go func() {
-		j.finishOnce.Do(j.finish)
+		j.cancelOnce.Do(j.cancel)
 	}()
 }
 
@@ -164,9 +169,13 @@ func (j *job) GetState() JobState {
 }
 
 func (j *job) IsRunning() bool {
-	return j.GetState() == Running
+	return j.state == Running
+}
+
+func (j *job) IsCancelled() bool {
+	return j.state == Cancelled
 }
 
 func (j *job) IsDone() bool {
-	return j.GetState() == Done
+	return j.state == Done
 }

@@ -28,7 +28,7 @@ func TestFinish(T *testing.T) {
 		return func() bool {
 			time.Sleep(10 * time.Millisecond)
 			j.SetRValue(1)
-			j.Finish()
+			j.Cancel()
 			return false
 		}, func() {
 			if j.GetRValue() != 1 {
@@ -48,7 +48,12 @@ func TestFinish(T *testing.T) {
 			}
 		}
 	})
+
 	<-job.Run()
+
+	if ! job.IsCancelled() {
+		T.Fatalf("got state %v, expected %v\n", j.Cancelled, job.GetState())
+	}
 }
 
 func TestPrereq(T *testing.T) {
@@ -62,7 +67,7 @@ func TestPrereq(T *testing.T) {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
-				j.Finish()
+				j.Cancel()
 				return false
 			}, func() {
 
