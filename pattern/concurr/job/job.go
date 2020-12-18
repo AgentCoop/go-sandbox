@@ -11,11 +11,12 @@ const (
 	New JobState = iota
 	WaitingForPrereq
 	Running
+	Cancelled
 	Finalizing
 	Done
 )
 
-type JobTask func(j Job) (func(), func())
+type JobTask func(j Job) (func() bool, func())
 
 type Job interface {
 	AddTask(job JobTask) *job
@@ -83,11 +84,12 @@ func (j *job) AddTask(task JobTask) *job {
 					return
 				default:
 					if j.state == Finalizing {
-						// Do nothing and wait for your finish signal
+						// Do nothing and wait for a finish signal
 						time.Sleep(time.Millisecond)
 						continue
 					}
-					run()
+					done := run()
+					if done { return }
 				}
 			}
 		}()

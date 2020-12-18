@@ -24,22 +24,24 @@ func signalAfter(t time.Duration, fn func()) chan struct{} {
 
 func TestFinish(T *testing.T) {
 	job := j.NewJob(nil)
-	job.AddTask(func(j j.Job) (func(), func()) {
-		return func() {
+	job.AddTask(func(j j.Job) (func() bool, func()) {
+		return func() bool {
 			time.Sleep(10 * time.Millisecond)
 			j.SetRValue(1)
 			j.Finish()
+			return false
 		}, func() {
 			if j.GetRValue() != 1 {
 				T.Fatalf("got %d, expected %d\n", j.GetRValue(), 1)
 			}
 		}
 	})
-	job.AddTask(func(j j.Job) (func(), func()) {
-		return func() {
+	job.AddTask(func(j j.Job) (func() bool, func()) {
+		return func() bool {
 			time.Sleep(30 * time.Millisecond)
-			if ! j.IsRunning() { return }
+			if ! j.IsRunning() { return false }
 			j.SetRValue(2)
+			return false
 		}, func() {
 			if j.GetRValue() != 1 {
 				T.Fatalf("got %d, expected %d\n", j.GetRValue(), 1)
@@ -55,12 +57,13 @@ func TestPrereq(T *testing.T) {
 	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
 	job := j.NewJob(nil)
 	job.WithPrerequisites(p1, p2)
-	job.AddTask(func(j j.Job) (func(), func()) {
-		return func() {
+	job.AddTask(func(j j.Job) (func() bool, func()) {
+		return func() bool {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
 				j.Finish()
+				return false
 			}, func() {
 
 			}
