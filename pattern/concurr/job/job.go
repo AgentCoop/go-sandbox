@@ -20,21 +20,36 @@ func (s JobState) String() string {
 	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled", "Done"}[s]
 }
 
-type JobTask func(j Job) (func() bool, func())
+type JobTask func(j Job) (func() interface{}, func())
 
 type Job interface {
-	AddTask(job JobTask) *job
+	AddTask(job JobTask) *TaskInfo
 	WithPrerequisites(sigs ...<-chan struct{}) *job
 	WithTimeout(duration time.Duration) *job
+	WasTimedOut() bool
 	Run() chan struct{}
 	Cancel()
+	GetError() <-chan interface{}
+
 	GetState() JobState
-	GetRValue() interface{}
-	SetRValue(v interface{})
+	// Helper methods to GetState
 	IsRunning() bool
 	IsDone() bool
 	IsCancelled() bool
-	WasTimedOut() bool
+
+	GetRValue() interface{}
+	SetRValue(v interface{})
+	GetRWValue() interface{}
+	SetRWValue(v interface{})
+}
+
+type TaskInfo struct {
+	index int
+	result chan interface{}
+}
+
+func (t *TaskInfo) GetResult() chan interface{} {
+	return t.result
 }
 
 type job struct {
@@ -46,6 +61,7 @@ type job struct {
 	timedoutFlag		bool
 	timeout				time.Duration
 
+	errorChan			<-chan interface{}
 	doneChan    		chan struct{}
 	doneTasksWg 		sync.WaitGroup
 	prereqWg    		sync.WaitGroup
@@ -91,35 +107,41 @@ func (j *job) WithTimeout(t time.Duration) *job {
 	return j
 }
 
-func (j *job) AddTask(task JobTask) *job {
+func (j *job) AddTask(task JobTask) *TaskInfo {
 	j.doneTasksWg.Add(1)
-	j.tasks = append(j.tasks, func() {
+	taskInfo := &TaskInfo{}
+	taskInfo.index = len(j.tasks)
+	taskInfo.result =  make(chan interface{}, 1)
+	taskBody := func() {
 		run, cancel := task(j)
 		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
 			j.incRunningTasksCounter(1)
 			for {
-				done := run()
+				result := run()
 				j.stateMu.Lock()
 
 				switch {
 				case j.state != Running:
 					j.stateMu.Unlock()
 					j.incRunningTasksCounter(-1)
+					taskInfo.result <- result
 					return
 				default:
 					j.stateMu.Unlock()
 				}
 
-				if done {
+				if result != nil {
 					j.doneTasksWg.Done()
 					j.incRunningTasksCounter(-1)
+					taskInfo.result <- result
 					return
 				}
 			}
 		}()
-	})
-	return j
+	}
+	j.tasks = append(j.tasks, taskBody)
+	return taskInfo
 }
 
 func (j *job) Run() chan struct{} {
@@ -159,6 +181,7 @@ func (j *job) Run() chan struct{} {
 	}
 
 	j.state = Running
+
 	for _, task := range j.tasks {
 		task()
 	}
@@ -183,6 +206,10 @@ func (j *job) Cancel() {
 
 func (j *job) WasTimedOut() bool {
 	return j.timedoutFlag
+}
+
+func (j *job) GetError() <-chan interface{} {
+	return j.errorChan
 }
 
 //

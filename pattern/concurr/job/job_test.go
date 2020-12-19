@@ -10,25 +10,37 @@ import (
 var counter int
 var mu sync.Mutex
 
-func incCounterJob(j j.Job) (func() bool, func()) {
-	return func() bool {
+func t(info *j.TaskInfo) {
+	info.GetResult()
+}
+
+func incCounterJob(j j.Job) (func() interface{}, func()) {
+	return func() interface{} {
 		mu.Lock()
 		defer mu.Unlock()
 		counter++
-		return true
+		return counter
 	}, func() { }
 }
 
+func squareJob(num int) j.JobTask {
+	return func(j j.Job) (func() interface{}, func()) {
+		return func() interface{} {
+			return num * num
+		}, func() { }
+	}
+}
+
 func sleepIncCounterJob(sleep time.Duration) j.JobTask {
-	return func(j j.Job) (func() bool, func()) {
-		return func() bool {
+	return func(j j.Job) (func() interface{}, func()) {
+		return func() interface{} {
 			if sleep > 0 {
 				time.Sleep(sleep)
 			}
 			mu.Lock()
 			defer mu.Unlock()
 			counter++
-			return true
+			return counter
 		}, func() { }
 	}
 }
@@ -47,8 +59,8 @@ func signalAfter(t time.Duration, fn func()) chan struct{} {
 
 func TestFinish(T *testing.T) {
 	job := j.NewJob(nil)
-	job.AddTask(func(j j.Job) (func() bool, func()) {
-		return func() bool {
+	job.AddTask(func(j j.Job) (func() interface{}, func()) {
+		return func() interface{} {
 			time.Sleep(10 * time.Millisecond)
 			j.SetRValue(1)
 			j.Cancel()
@@ -59,8 +71,8 @@ func TestFinish(T *testing.T) {
 			}
 		}
 	})
-	job.AddTask(func(j j.Job) (func() bool, func()) {
-		return func() bool {
+	job.AddTask(func(j j.Job) (func() interface{}, func()) {
+		return func() interface{} {
 			time.Sleep(30 * time.Millisecond)
 			if ! j.IsRunning() { return false }
 			j.SetRValue(2)
@@ -85,8 +97,8 @@ func TestPrereq(T *testing.T) {
 	p2 := signalAfter(20 * time.Millisecond, func() { counter++ })
 	job := j.NewJob(nil)
 	job.WithPrerequisites(p1, p2)
-	job.AddTask(func(j j.Job) (func() bool, func()) {
-		return func() bool {
+	job.AddTask(func(j j.Job) (func() interface{}, func()) {
+		return func() interface{} {
 				if counter != 2 {
 					T.Fatalf("got %d, expected %d\n", counter, 2)
 				}
@@ -130,5 +142,25 @@ func TestTimeout(T *testing.T) {
 	<-job.Run()
 	if ! job.IsCancelled() || counter != 1 {
 		T.Fail()
+	}
+}
+
+func TestTaskResult(T *testing.T) {
+	// Must succeed
+	counter = 0
+	job := j.NewJob(nil).WithTimeout(10 * time.Millisecond)
+	task1 := job.AddTask(squareJob(3))
+	task2 := job.AddTask(sleepIncCounterJob(15 * time.Millisecond))
+	<-job.Run()
+	if ! job.IsCancelled() || counter != 0 {
+		T.Fatalf("expected: counter 0, state Done; got: %d %s\n", counter, job.GetState())
+	}
+	select {
+	case num := <- task1.GetResult():
+		if num != 9 { T.Fatalf("expected: 0; got: %d\n", num) }
+	case <- task2.GetResult():
+		T.Fatal()
+	default:
+		T.Fatal()
 	}
 }
