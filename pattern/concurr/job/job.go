@@ -17,7 +17,7 @@ const (
 )
 
 func (s JobState) String() string {
-	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled","Done"}[s]
+	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled", "Done"}[s]
 }
 
 type JobTask func(j Job) (func() bool, func())
@@ -49,18 +49,17 @@ type job struct {
 	timeoutChan			chan time.Time
 	timeout				time.Duration
 
-	cancelChan  chan struct{}
-	doneChan    chan struct{}
-	cancelOnce  sync.Once
-	doneTasksWg sync.WaitGroup
-	prereqWg    sync.WaitGroup
+	doneChan    		chan struct{}
+	doneTasksWg 		sync.WaitGroup
+	prereqWg    		sync.WaitGroup
 
 	value      			interface{}
-	rValue 				interface{} // Access protected by Mutex
-	rwValue 			interface{} // Access protected by RWMutex
+	rValue 				interface{}
+	rValMu				sync.Mutex
+	rwValue 			interface{}
+	rwValMu				sync.RWMutex
 
-	mu     				sync.Mutex
-	rmu     			sync.RWMutex
+	stateMu 			sync.Mutex
 }
 
 func NewJob(value interface{}) *job {
@@ -104,15 +103,15 @@ func (j *job) AddTask(task JobTask) *job {
 			j.incRunningTasksCounter(1)
 			for {
 				done := run()
-				j.mu.Lock()
+				j.stateMu.Lock()
 
 				switch {
 				case j.state != Running:
-					j.mu.Unlock()
+					j.stateMu.Unlock()
 					j.incRunningTasksCounter(-1)
 					return
 				default:
-					j.mu.Unlock()
+					j.stateMu.Unlock()
 				}
 
 				if done {
@@ -127,8 +126,6 @@ func (j *job) AddTask(task JobTask) *job {
 }
 
 func (j *job) Run() chan struct{} {
-	j.cancelChan = make(chan struct{}, len(j.tasks))
-
 	// Start timer that will cancel and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -144,11 +141,11 @@ func (j *job) Run() chan struct{} {
 		}()
 	}
 
-	// Set final state and send Done signal
+	// Sets final state and send Done signal
 	go func() {
 		j.doneTasksWg.Wait()
-		j.mu.Lock()
-		defer j.mu.Unlock()
+		j.stateMu.Lock()
+		defer j.stateMu.Unlock()
 		switch j.state {
 		case Cancelling:
 			j.state = Cancelled
@@ -169,15 +166,10 @@ func (j *job) Run() chan struct{} {
 	return j.doneChan
 }
 
-func (j *job) cancel() {
-	for i :=0; i < len(j.tasks); i++ {
-		j.cancelChan <- struct{}{}
-	}
-}
-
 func (j *job) Cancel() {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.stateMu.Lock()
+	defer j.stateMu.Unlock()
+
 	if j.state != Running { return }
 	j.state = Cancelling
 
@@ -198,26 +190,26 @@ func (j *job) Value() interface{} {
 }
 
 func (j *job) GetRValue() interface{} {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.rValMu.Lock()
+	defer j.rValMu.Unlock()
 	return j.rValue
 }
 
 func (j *job) SetRValue(v interface{}) {
-	j.mu.Lock()
-	defer j.mu.Unlock()
+	j.rValMu.Lock()
+	defer j.rValMu.Unlock()
 	j.rValue = v
 }
 
 func (j *job) GetRWValue() interface{} {
-	j.rmu.RLock()
-	defer j.rmu.RUnlock()
+	j.rwValMu.RLock()
+	defer j.rwValMu.RUnlock()
 	return j.rwValue
 }
 
 func (j *job) SetRWValue(v interface{}) {
-	j.rmu.Lock()
-	defer j.rmu.Unlock()
+	j.rwValMu.Lock()
+	defer j.rwValMu.Unlock()
 	j.rwValue = v
 }
 
@@ -230,7 +222,7 @@ func (j *job) IsRunning() bool {
 }
 
 func (j *job) IsCancelled() bool {
-	return j.state == Cancelled || j.state == Cancelling
+	return j.state == Cancelled
 }
 
 func (j *job) IsDone() bool {
