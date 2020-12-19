@@ -113,12 +113,13 @@ func TestDone(T *testing.T) {
 func TestTimeout(T *testing.T) {
 	// Must succeed
 	counter = 0
-	job := j.NewJob(nil).WithTimeout(25 * time.Millisecond)
-	job.AddTask(sleepIncCounterJob(10 * time.Millisecond))
-	job.AddTask(sleepIncCounterJob(20 * time.Millisecond))
+	job := j.NewJob(nil).WithTimeout(120 * time.Millisecond)
+	for i := 0; i < 100; i++ {
+		job.AddTask(sleepIncCounterJob(time.Duration(i + 1) * time.Millisecond))
+	}
 	<-job.Run()
-	if ! job.IsDone() || counter != 2 {
-		T.Fail()
+	if ! job.IsDone() || counter != 100 {
+		T.Fatalf("expected counter 100, got %d\n", counter)
 	}
 	// Must be cancelled
 	counter = 0
