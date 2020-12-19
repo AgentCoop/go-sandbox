@@ -2,6 +2,7 @@ package job
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -29,7 +30,8 @@ type Job interface {
 	WasTimedOut() bool
 	Run() chan struct{}
 	Cancel()
-	GetError() <-chan interface{}
+	Assert(err interface{})
+	GetError() interface{}
 
 	GetState() JobState
 	// Helper methods to GetState
@@ -44,12 +46,18 @@ type Job interface {
 }
 
 type TaskInfo struct {
-	index int
-	result chan interface{}
+	index 	int
+	result 	chan interface{}
+	job 	*job
+	err 	interface{}
 }
 
 func (t *TaskInfo) GetResult() chan interface{} {
 	return t.result
+}
+
+func (t *TaskInfo) GetJob() Job {
+	return t.job
 }
 
 type job struct {
@@ -57,13 +65,15 @@ type job struct {
 	cancelTasks      	[]func()
 	runningTasks 		int
 	runningTaskMu		sync.Mutex
+	failedTasksCounter	int32
+	runningTasksCounter	int32
 	state      			JobState
 	timedoutFlag		bool
 	timeout				time.Duration
 
-	errorChan			<-chan interface{}
+	errorChan			chan interface{}
+	errorInfo			interface{}
 	doneChan    		chan struct{}
-	doneTasksWg 		sync.WaitGroup
 	prereqWg    		sync.WaitGroup
 
 	value      			interface{}
@@ -107,8 +117,15 @@ func (j *job) WithTimeout(t time.Duration) *job {
 	return j
 }
 
+func (j *job) Assert(err interface{}) {
+	if err != nil {
+		j.errorChan <- err
+		// Now time to panic to stop normal goroutine execution from which Assert method was called.
+		panic(err)
+	}
+}
+
 func (j *job) AddTask(task JobTask) *TaskInfo {
-	j.doneTasksWg.Add(1)
 	taskInfo := &TaskInfo{}
 	taskInfo.index = len(j.tasks)
 	taskInfo.result =  make(chan interface{}, 1)
@@ -116,15 +133,22 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 		run, cancel := task(j)
 		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
-			j.incRunningTasksCounter(1)
+			defer func() {
+				j.runningTaskMu.Lock()
+				j.runningTasksCounter--
+				j.runningTaskMu.Unlock()
+
+				if r := recover(); r != nil {
+					atomic.AddInt32(&j.failedTasksCounter, 1)
+				}
+			}()
+
 			for {
 				result := run()
 				j.stateMu.Lock()
-
 				switch {
 				case j.state != Running:
 					j.stateMu.Unlock()
-					j.incRunningTasksCounter(-1)
 					taskInfo.result <- result
 					return
 				default:
@@ -132,8 +156,6 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 				}
 
 				if result != nil {
-					j.doneTasksWg.Done()
-					j.incRunningTasksCounter(-1)
 					taskInfo.result <- result
 					return
 				}
@@ -144,7 +166,11 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 	return taskInfo
 }
 
+// Concurrently executes all tasks in the job.
 func (j *job) Run() chan struct{} {
+	nTasks := len(j.tasks)
+	j.errorChan = make(chan interface{}, nTasks)
+	j.runningTasksCounter = int32(nTasks)
 	// Start timer that will cancel and mark the job as timed out if needed
 	if j.timeout > 0 {
 		go func() {
@@ -162,18 +188,30 @@ func (j *job) Run() chan struct{} {
 		}()
 	}
 
-	// Sets final state and dispatches Done signal
+	// Error listener
 	go func() {
-		j.doneTasksWg.Wait()
-		j.stateMu.Lock()
-		defer j.stateMu.Unlock()
-		switch j.state {
-		case Cancelling:
-			j.state = Cancelled
-		case Running:
-			j.state = Done
+		for {
+			select {
+			case err := <- j.errorChan:
+				j.errorInfo = err
+				j.Cancel()
+				return
+			}
 		}
-		j.doneChan <- struct{}{}
+	}()
+
+	// Diptaches Done signal sif there is no
+	go func() {
+		for {
+			j.runningTaskMu.Lock()
+			if j.runningTasksCounter == 0 {
+				j.state = Done
+				j.runningTaskMu.Unlock()
+				j.doneChan <- struct{}{}
+				return
+			}
+			j.runningTaskMu.Unlock()
+		}
 	}()
 
 	if j.state == WaitingForPrereq {
@@ -199,17 +237,20 @@ func (j *job) Cancel() {
 		go cancel()
 	}
 
-	for i := 0; i < j.runningTasks; i++ {
-		j.doneTasksWg.Done()
+	if (j.timedoutFlag) {
+		j.state = Cancelled
+		j.doneChan <- struct{}{}
 	}
+
+	//j.doneTasksWg.Done()
 }
 
 func (j *job) WasTimedOut() bool {
 	return j.timedoutFlag
 }
 
-func (j *job) GetError() <-chan interface{} {
-	return j.errorChan
+func (j *job) GetError() interface{} {
+	return j.errorInfo
 }
 
 //
