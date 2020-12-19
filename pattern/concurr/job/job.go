@@ -11,15 +11,21 @@ const (
 	New JobState = iota
 	WaitingForPrereq
 	Running
+	Cancelling
 	Cancelled
-	Finalizing
 	Done
 )
+
+func (s JobState) String() string {
+	return [...]string{"New", "WaitingForPrereq", "Running", "Cancelling", "Cancelled","Done"}[s]
+}
 
 type JobTask func(j Job) (func() bool, func())
 
 type Job interface {
 	AddTask(job JobTask) *job
+	WithPrerequisites(sigs ...<-chan struct{}) *job
+	WithTimeout(duration time.Duration) *job
 	Run() chan struct{}
 	Cancel()
 	GetState() JobState
@@ -31,21 +37,30 @@ type Job interface {
 }
 
 type job struct {
-	tasks      []func()
-	state      JobState
+	tasks      			[]func()
+	cancelTasks      	[]func()
+	// If set to true stop execution of all tasks
+	stopExec			bool
+	runningTasks 		int
+	runningTaskMu		sync.Mutex
+	state      			JobState
+	timedoutFlag		bool
+	cancelFlag			bool
+	timeoutChan			chan time.Time
+	timeout				time.Duration
 
-	cancelChan chan struct{}
-	doneChan   chan struct{}
-	cancelOnce sync.Once
-	finishWg   sync.WaitGroup
-	prereqWg   sync.WaitGroup
+	cancelChan  chan struct{}
+	doneChan    chan struct{}
+	cancelOnce  sync.Once
+	doneTasksWg sync.WaitGroup
+	prereqWg    sync.WaitGroup
 
-	value      interface{}
-	rValue 		interface{} // Access protected by Mutex
-	rwValue 	interface{} // Access protected by RWMutex
+	value      			interface{}
+	rValue 				interface{} // Access protected by Mutex
+	rwValue 			interface{} // Access protected by RWMutex
 
-	mu     		sync.Mutex
-	rmu     	sync.RWMutex
+	mu     				sync.Mutex
+	rmu     			sync.RWMutex
 }
 
 func NewJob(value interface{}) *job {
@@ -61,10 +76,11 @@ func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 	j.state = WaitingForPrereq
 	j.prereqWg.Add(len(sigs))
 	for _, sig := range sigs {
+		s := sig // Binds loop variable to go closure
 		go func() {
 			for {
 				select {
-				case <-sig:
+				case <-s:
 					j.prereqWg.Done()
 					return
 				}
@@ -74,28 +90,35 @@ func (j *job) WithPrerequisites(sigs ...<-chan struct{}) *job {
 	return j
 }
 
+func (j *job) WithTimeout(t time.Duration) *job {
+	j.timeout = t
+	return j
+}
+
 func (j *job) AddTask(task JobTask) *job {
-	j.finishWg.Add(1)
+	j.doneTasksWg.Add(1)
 	j.tasks = append(j.tasks, func() {
 		run, cancel := task(j)
+		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
+			j.incRunningTasksCounter(1)
 			for {
-				select {
-				case <-j.cancelChan:
-					go cancel()
-					j.finishWg.Done()
+				done := run()
+				j.mu.Lock()
+
+				switch {
+				case j.state != Running:
+					j.mu.Unlock()
+					j.incRunningTasksCounter(-1)
 					return
 				default:
-					if j.state == Finalizing {
-						// Do nothing and wait for a finish signal
-						time.Sleep(time.Millisecond)
-						continue
-					}
-					done := run()
-					if done {
-						j.finishWg.Done()
-						return
-					}
+					j.mu.Unlock()
+				}
+
+				if done {
+					j.doneTasksWg.Done()
+					j.incRunningTasksCounter(-1)
+					return
 				}
 			}
 		}()
@@ -104,12 +127,42 @@ func (j *job) AddTask(task JobTask) *job {
 }
 
 func (j *job) Run() chan struct{} {
+	j.cancelChan = make(chan struct{}, len(j.tasks))
+
+	// Start timer that will cancel and mark the job as timed out if needed
+	if j.timeout > 0 {
+		go func() {
+			ch := time.After(j.timeout)
+			for {
+				select {
+				case <-ch:
+					j.timedoutFlag = true
+					j.Cancel()
+					return
+				}
+			}
+		}()
+	}
+
+	// Set final state and send Done signal
+	go func() {
+		j.doneTasksWg.Wait()
+		j.mu.Lock()
+		defer j.mu.Unlock()
+		switch j.state {
+		case Cancelling:
+			j.state = Cancelled
+		case Running:
+			j.state = Done
+		}
+		j.doneChan <- struct{}{}
+	}()
+
 	if j.state == WaitingForPrereq {
-		j.prereqWg.Done()
 		j.prereqWg.Wait()
 	}
+
 	j.state = Running
-	j.cancelChan = make(chan struct{}, len(j.tasks))
 	for _, task := range j.tasks {
 		task()
 	}
@@ -120,17 +173,21 @@ func (j *job) cancel() {
 	for i :=0; i < len(j.tasks); i++ {
 		j.cancelChan <- struct{}{}
 	}
-	go func(){
-		j.finishWg.Wait()
-		j.doneChan <- struct{}{}
-	}()
 }
 
 func (j *job) Cancel() {
-	j.state = Cancelled
-	go func() {
-		j.cancelOnce.Do(j.cancel)
-	}()
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.state != Running { return }
+	j.state = Cancelling
+
+	for _, cancel := range j.cancelTasks {
+		go cancel()
+	}
+
+	for i := 0; i < j.runningTasks; i++ {
+		j.doneTasksWg.Done()
+	}
 }
 
 //
@@ -173,9 +230,18 @@ func (j *job) IsRunning() bool {
 }
 
 func (j *job) IsCancelled() bool {
-	return j.state == Cancelled
+	return j.state == Cancelled || j.state == Cancelling
 }
 
 func (j *job) IsDone() bool {
 	return j.state == Done
+}
+
+//
+// Helper methods
+//
+func (j *job) incRunningTasksCounter(inc int) {
+	j.runningTaskMu.Lock()
+	defer j.runningTaskMu.Unlock()
+	j.runningTasks += inc
 }
