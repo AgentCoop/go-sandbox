@@ -34,19 +34,16 @@ type Job interface {
 	IsRunning() bool
 	IsDone() bool
 	IsCancelled() bool
+	WasTimedOut() bool
 }
 
 type job struct {
 	tasks      			[]func()
 	cancelTasks      	[]func()
-	// If set to true stop execution of all tasks
-	stopExec			bool
 	runningTasks 		int
 	runningTaskMu		sync.Mutex
 	state      			JobState
 	timedoutFlag		bool
-	cancelFlag			bool
-	timeoutChan			chan time.Time
 	timeout				time.Duration
 
 	doneChan    		chan struct{}
@@ -133,15 +130,17 @@ func (j *job) Run() chan struct{} {
 			for {
 				select {
 				case <-ch:
-					j.timedoutFlag = true
-					j.Cancel()
+					if j.state == Running {
+						j.timedoutFlag = true
+						j.Cancel()
+					}
 					return
 				}
 			}
 		}()
 	}
 
-	// Sets final state and send Done signal
+	// Sets final state and dispatches Done signal
 	go func() {
 		j.doneTasksWg.Wait()
 		j.stateMu.Lock()
@@ -180,6 +179,10 @@ func (j *job) Cancel() {
 	for i := 0; i < j.runningTasks; i++ {
 		j.doneTasksWg.Done()
 	}
+}
+
+func (j *job) WasTimedOut() bool {
+	return j.timedoutFlag
 }
 
 //
