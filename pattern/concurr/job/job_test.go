@@ -69,40 +69,6 @@ func signalAfter(t time.Duration, fn func()) chan struct{} {
 	return ch
 }
 
-func TestFinish(T *testing.T) {
-	job := j.NewJob(nil)
-	job.AddTask(func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
-			time.Sleep(10 * time.Millisecond)
-			j.SetRValue(1)
-			j.Cancel()
-			return false
-		}, func() {
-			//if j.GetRValue() != 1 {
-			//	T.Fatalf("got %d, expected %d\n", j.GetRValue(), 1)
-			//}
-		}
-	})
-	job.AddTask(func(j j.Job) (func() interface{}, func()) {
-		return func() interface{} {
-			time.Sleep(30 * time.Millisecond)
-			if ! j.IsRunning() { return false }
-			j.SetRValue(2)
-			return false
-		}, func() {
-			//if j.GetRValue() != 1 {
-			//	T.Fatalf("got %d, expected %d\n", j.GetRValue(), 1)
-			//}
-		}
-	})
-
-	<-job.Run()
-
-	if ! job.IsCancelled() {
-	//	T.Fatalf("got state %v, expected %v\n", job.GetState(), j.Cancelled)
-	}
-}
-
 func TestPrereq(T *testing.T) {
 	var counter int
 	p1 := signalAfter(10 * time.Millisecond, func() { counter++ })
@@ -172,9 +138,6 @@ func TestTaskResult(T *testing.T) {
 		if num != 9 { T.Fatalf("expected: 0; got: %d\n", num) }
 	case <- task2.GetResult():
 		T.Fatal()
-	//default:
-	//	T.Fatalf("task3")
-	//	T.Fatal()
 	}
 }
 

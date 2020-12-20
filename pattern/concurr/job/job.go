@@ -39,11 +39,6 @@ type Job interface {
 	IsRunning() bool
 	IsDone() bool
 	IsCancelled() bool
-
-	GetRValue() interface{}
-	SetRValue(v interface{})
-	GetRWValue() interface{}
-	SetRWValue(v interface{})
 }
 
 type TaskInfo struct {
@@ -71,16 +66,10 @@ type job struct {
 	timeout             time.Duration
 
 	errorChan			chan interface{}
-	errorInfo			interface{}
 	doneChan    		chan struct{}
 	prereqWg    		sync.WaitGroup
 
 	value      			interface{}
-	rValue 				interface{}
-	rValMu				sync.Mutex
-	rwValue 			interface{}
-	rwValMu				sync.RWMutex
-
 	stateMu 			sync.Mutex
 }
 
@@ -244,30 +233,6 @@ func (j *job) Value() interface{} {
 	return j.value
 }
 
-func (j *job) GetRValue() interface{} {
-	j.rValMu.Lock()
-	defer j.rValMu.Unlock()
-	return j.rValue
-}
-
-func (j *job) SetRValue(v interface{}) {
-	j.rValMu.Lock()
-	defer j.rValMu.Unlock()
-	j.rValue = v
-}
-
-func (j *job) GetRWValue() interface{} {
-	j.rwValMu.RLock()
-	defer j.rwValMu.RUnlock()
-	return j.rwValue
-}
-
-func (j *job) SetRWValue(v interface{}) {
-	j.rwValMu.Lock()
-	defer j.rwValMu.Unlock()
-	j.rwValue = v
-}
-
 func (j *job) GetState() JobState {
 	return j.state
 }
@@ -283,4 +248,3 @@ func (j *job) IsCancelled() bool {
 func (j *job) IsDone() bool {
 	return j.state == Done
 }
-
