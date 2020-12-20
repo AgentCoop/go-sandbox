@@ -181,8 +181,9 @@ func TestTaskResult(T *testing.T) {
 func TestAssert(T *testing.T) {
 	// Must succeed
 	counter = 0
+	nTasks := 100
 	job := j.NewJob(nil)
-	for i := 0; i < 100; i++ {
+	for i := 0; i < nTasks; i++ {
 		job.AddTask(divideJob(9, 3))
 		job.AddTask(divideJob(9, 0))
 		job.AddTask(divideJob(9, 9))
@@ -190,6 +191,10 @@ func TestAssert(T *testing.T) {
 	<-job.Run()
 	if ! job.IsCancelled() {
 		T.Fatalf("expected: state %s; got: state %s", j.Cancelled, job.GetState())
+	}
+	time.Sleep(50 * time.Millisecond)
+	if job.GetFailedTasksNum() != int32(nTasks) {
+		T.Fatalf("expected: %d; got: %d\n", nTasks, job.GetFailedTasksNum())
 	}
 	select {
 	case err := <- job.GetError():
