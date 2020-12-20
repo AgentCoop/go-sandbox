@@ -61,15 +61,14 @@ func (t *TaskInfo) GetJob() Job {
 }
 
 type job struct {
-	tasks      			[]func()
-	cancelTasks      	[]func()
-	runningTasks 		int
-	runningTaskMu		sync.Mutex
-	failedTasksCounter	int32
-	runningTasksCounter	int32
-	state      			JobState
-	timedoutFlag		bool
-	timeout				time.Duration
+	tasks               []func()
+	cancelTasks         []func()
+	runningTasksMu      sync.Mutex
+	failedTasksCounter  int32
+	runningTasksCounter int32
+	state               JobState
+	timedoutFlag        bool
+	timeout             time.Duration
 
 	errorChan			chan interface{}
 	errorInfo			interface{}
@@ -137,9 +136,9 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 		j.cancelTasks = append(j.cancelTasks, cancel)
 		go func() {
 			defer func() {
-				j.runningTaskMu.Lock()
+				j.runningTasksMu.Lock()
 				j.runningTasksCounter--
-				j.runningTaskMu.Unlock()
+				j.runningTasksMu.Unlock()
 				if r := recover(); r != nil {
 					atomic.AddInt32(&j.failedTasksCounter, 1)
 				}
@@ -283,11 +282,3 @@ func (j *job) IsDone() bool {
 	return j.state == Done
 }
 
-//
-// Helper methods
-//
-func (j *job) incRunningTasksCounter(inc int) {
-	j.runningTaskMu.Lock()
-	defer j.runningTaskMu.Unlock()
-	j.runningTasks += inc
-}
