@@ -31,7 +31,7 @@ type Job interface {
 	Run() chan struct{}
 	Cancel()
 	Assert(err interface{})
-	GetError() interface{}
+	GetError() chan interface{}
 
 	GetState() JobState
 	// Helper methods to GetState
@@ -119,7 +119,10 @@ func (j *job) WithTimeout(t time.Duration) *job {
 
 func (j *job) Assert(err interface{}) {
 	if err != nil {
-		j.errorChan <- err
+		go func() {
+			j.errorChan <- err
+			j.Cancel()
+		}()
 		// Now time to panic to stop normal goroutine execution from which Assert method was called.
 		panic(err)
 	}
@@ -137,7 +140,6 @@ func (j *job) AddTask(task JobTask) *TaskInfo {
 				j.runningTaskMu.Lock()
 				j.runningTasksCounter--
 				j.runningTaskMu.Unlock()
-
 				if r := recover(); r != nil {
 					atomic.AddInt32(&j.failedTasksCounter, 1)
 				}
@@ -188,29 +190,14 @@ func (j *job) Run() chan struct{} {
 		}()
 	}
 
-	// Error listener
+	// Dispatches done signal if there are no running tasks
 	go func() {
 		for {
-			select {
-			case err := <- j.errorChan:
-				j.errorInfo = err
-				j.Cancel()
-				return
-			}
-		}
-	}()
-
-	// Diptaches Done signal sif there is no
-	go func() {
-		for {
-			j.runningTaskMu.Lock()
-			if j.runningTasksCounter == 0 {
+			if j.runningTasksCounter == 0 && j.state == Running {
 				j.state = Done
-				j.runningTaskMu.Unlock()
 				j.doneChan <- struct{}{}
 				return
 			}
-			j.runningTaskMu.Unlock()
 		}
 	}()
 
@@ -237,20 +224,16 @@ func (j *job) Cancel() {
 		go cancel()
 	}
 
-	if (j.timedoutFlag) {
-		j.state = Cancelled
-		j.doneChan <- struct{}{}
-	}
-
-	//j.doneTasksWg.Done()
+	j.state = Cancelled
+	j.doneChan <- struct{}{}
 }
 
 func (j *job) WasTimedOut() bool {
 	return j.timedoutFlag
 }
 
-func (j *job) GetError() interface{} {
-	return j.errorInfo
+func (j *job) GetError() chan interface{} {
+	return j.errorChan
 }
 
 //

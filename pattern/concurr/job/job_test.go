@@ -162,7 +162,7 @@ func TestTaskResult(T *testing.T) {
 	counter = 0
 	job := j.NewJob(nil).WithTimeout(10 * time.Millisecond)
 	task1 := job.AddTask(squareJob(3))
-	task2 := job.AddTask(sleepIncCounterJob(15 * time.Millisecond))
+	task2 := job.AddTask(sleepIncCounterJob(20 * time.Millisecond))
 	<-job.Run()
 	if ! job.IsCancelled() || counter != 0 {
 		T.Fatalf("expected: counter 0, state Done; got: %d %s\n", counter, job.GetState())
@@ -172,8 +172,9 @@ func TestTaskResult(T *testing.T) {
 		if num != 9 { T.Fatalf("expected: 0; got: %d\n", num) }
 	case <- task2.GetResult():
 		T.Fatal()
-	default:
-		T.Fatal()
+	//default:
+	//	T.Fatalf("task3")
+	//	T.Fatal()
 	}
 }
 
@@ -187,10 +188,13 @@ func TestAssert(T *testing.T) {
 		job.AddTask(divideJob(9, 9))
 	}
 	<-job.Run()
-	//if ! job.IsCancelled() {
-	//	T.Fatalf("expected: state %s; got: state %s", j.Cancelled, job.GetState())
-	//}
-	if job.GetError() != "division by zero" {
-		T.Fatal()
+	if ! job.IsCancelled() {
+		T.Fatalf("expected: state %s; got: state %s", j.Cancelled, job.GetState())
+	}
+	select {
+	case err := <- job.GetError():
+		if err != "division by zero" {
+			T.Fatal()
+		}
 	}
 }
